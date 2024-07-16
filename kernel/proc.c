@@ -281,6 +281,9 @@ fork(void)
     return -1;
   }
 
+  // 子进程继承父进程的 trace_mask
+  np->trace_mask = p->trace_mask;
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -317,6 +320,7 @@ fork(void)
 
   return pid;
 }
+
 
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
