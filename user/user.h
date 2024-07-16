@@ -23,7 +23,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
-int trace(int mask);
+int trace(int mask); //添加为用户级函数
 
 
 // ulib.c

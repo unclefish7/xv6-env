@@ -95,7 +95,7 @@ struct proc {
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
-  int trace_mask;              // 跟踪
+  int trace_mask;              // 存储每个进程的系统调用跟踪掩码
 
   // these are private to the process, so p->lock need not be held.
   uint64 kstack;               // Virtual address of kernel stack

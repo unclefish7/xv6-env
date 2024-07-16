@@ -83,7 +83,7 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
-extern uint64 sys_trace(void);
+extern uint64 sys_trace(void); //声明一下trace系统调用
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -107,7 +107,7 @@ extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 
 static uint64 (*syscalls[])(void) = {
-[SYS_trace]    sys_trace,
+[SYS_trace]    sys_trace, // 注册系统调用
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
@@ -131,6 +131,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 };
 
+// 把所有的系统调用名称存储下来
 char *syscallnames[] = {
   [SYS_fork]    "fork",
   [SYS_exit]    "exit",
@@ -174,7 +175,7 @@ syscall(void)
   // 打印跟踪信息
   if(p->trace_mask & (1 << num)) {
     if(num > 0 && num < NELEM(syscallnames) && syscallnames[num]) {
-      printf("%d: syscall %s -> %d\n", p->pid, syscallnames[num], p->trapframe->a0);
+      printf("%d: syscall %s -> %d\n", p->pid, syscallnames[num], p->trapframe->a0); //根据trace_mask判断那些被跟踪的系统调用，并打印跟踪信息
     } else {
       printf("%d: syscall unknown[%d] -> %d\n", p->pid, num, p->trapframe->a0);
     }

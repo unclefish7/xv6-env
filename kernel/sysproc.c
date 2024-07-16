@@ -13,7 +13,7 @@ sys_trace(void)
   int mask;
   if(argint(0, &mask) < 0)
     return -1;
-  myproc()->trace_mask = mask;
+  myproc()->trace_mask = mask; // 实现trace功能
   return 0;
 }
 
