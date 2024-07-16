@@ -658,3 +658,14 @@ procdump(void)
     printf("\n");
   }
 }
+
+//计算正在使用的进程数量
+int getnproc(void) {
+    struct proc *p;
+    int count = 0;
+    for(p = proc; p < &proc[NPROC]; p++) {
+        if(p->state != UNUSED)
+            count++;
+    }
+    return count;
+}

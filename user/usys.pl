@@ -36,4 +36,5 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
-entry("trace"); //把系统调用包装为用户级函数
+entry("trace"); # 把系统调用包装为用户级函数
+entry("sysinfo"); 

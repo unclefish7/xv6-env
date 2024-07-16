@@ -24,6 +24,10 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int trace(int mask); //添加为用户级函数
+// 添加sysinfo对应的结构体和函数
+struct sysinfo;
+int sysinfo(struct sysinfo *);
+
 
 
 // ulib.c

@@ -83,6 +83,7 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+extern uint64 sys_sysinfo(void);
 extern uint64 sys_trace(void); //声明一下trace系统调用
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
@@ -107,6 +108,7 @@ extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 
 static uint64 (*syscalls[])(void) = {
+[SYS_sysinfo]  sys_sysinfo,
 [SYS_trace]    sys_trace, // 注册系统调用
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
@@ -133,6 +135,7 @@ static uint64 (*syscalls[])(void) = {
 
 // 把所有的系统调用名称存储下来
 char *syscallnames[] = {
+  [SYS_sysinfo] "sysinfo",
   [SYS_fork]    "fork",
   [SYS_exit]    "exit",
   [SYS_wait]    "wait",

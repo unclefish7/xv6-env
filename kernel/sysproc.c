@@ -6,6 +6,10 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
+
+extern uint64 kfreemem(void);
+extern int getnproc(void);
 
 uint64
 sys_trace(void)
@@ -16,6 +20,29 @@ sys_trace(void)
   myproc()->trace_mask = mask; // 实现trace功能
   return 0;
 }
+
+uint64 sys_sysinfo(void) {
+    struct sysinfo info;
+    uint64 addr;
+    struct proc *p = myproc();
+
+    // 获取系统调用的第一个参数
+    if (argaddr(0, &addr) < 0) {
+        return -1;
+    }
+
+    // 获取系统信息
+    info.freemem = kfreemem();
+    info.nproc = getnproc();
+
+    // 将sysinfo结构体复制到用户空间
+    if (copyout(p->pagetable, addr, (char *)&info, sizeof(info)) < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
 
 
 uint64
