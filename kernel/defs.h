@@ -184,3 +184,8 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+void vmprint(pagetable_t pagetable);
+
+void
+vmprint_inner(pagetable_t pagetable, int level, int index);

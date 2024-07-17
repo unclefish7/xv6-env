@@ -83,6 +83,7 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+extern uint64 sys_pgaccess(void);
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -107,11 +108,9 @@ extern uint64 sys_uptime(void);
 #ifdef LAB_NET
 extern uint64 sys_connect(void);
 #endif
-#ifdef LAB_PGTBL
-extern uint64 sys_pgaccess(void);
-#endif
 
 static uint64 (*syscalls[])(void) = {
+[SYS_pgaccess] sys_pgaccess,
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
@@ -135,9 +134,6 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 #ifdef LAB_NET
 [SYS_connect] sys_connect,
-#endif
-#ifdef LAB_PGTBL
-[SYS_pgaccess] sys_pgaccess,
 #endif
 };
 

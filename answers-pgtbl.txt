@@ -1,0 +1,22 @@
+### Speed up system calls
+
+Q1: Which other xv6 system call(s) could be made faster using this shared page? Explain how.
+
+A1: Besides `getpid()`, other system calls such as `getppid()` and `uptime()` could also benefit from using a shared page. By mapping read-only pages containing relevant information (e.g., parent process ID or system uptime), these system calls can avoid kernel crossings, leading to faster execution.
+
+### Print a page table
+
+Q2: Explain the output of `vmprint` in terms of Fig 3-4 from the text. What does page 0 contain? What is in page 2? When running in user mode, could the process read/write the memory mapped by page 1? What does the third to last page contain?
+
+A2: 
+- Page 0 contains the top-level page table, which maps the higher-level entries.
+- Page 2 contains the second-level page table, which maps more detailed entries.
+- In user mode, the process cannot read/write the memory mapped by page 1 unless the relevant PTEs have user access permissions set (PTE_U).
+- The third to last page typically contains a mapping for the stack or heap, depending on the process's memory layout.
+
+### Detecting which pages have been accessed
+
+Q3: What are the potential uses of detecting accessed pages in an operating system?
+
+A3: Detecting accessed pages can be useful for implementing efficient garbage collection, page replacement algorithms, and memory usage profiling. By knowing which pages have been accessed, the system can make better decisions about which pages to swap out, collect, or optimize.
+

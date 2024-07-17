@@ -75,15 +75,42 @@ sys_sleep(void)
   return 0;
 }
 
+// 声明 walk 函数
+pte_t *walk(pagetable_t pagetable, uint64 va, int alloc);
 
-#ifdef LAB_PGTBL
 int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
-  return 0;
+  uint64 start_va;
+    int num_pages;
+    uint64 user_mask_addr;
+
+    // 解析系统调用参数
+    if (argaddr(0, &start_va) < 0 || argint(1, &num_pages) < 0 || argaddr(2, &user_mask_addr) < 0)
+        return -1;
+
+    // 设定一个扫描页数的上限
+    if (num_pages > 64) // 可以根据需要调整这个值
+        return -1;
+
+    struct proc *p = myproc();
+    uint64 mask = 0;
+
+    for (int i = 0; i < num_pages; i++) {
+        pte_t *pte = walk(p->pagetable, start_va + i * PGSIZE, 0);
+        if (pte && (*pte & PTE_V) && (*pte & PTE_A)) {
+            mask |= (1UL << i);
+            *pte &= ~PTE_A; // 清除访问位
+        }
+    }
+
+    // 将结果复制到用户空间
+    if (copyout(p->pagetable, user_mask_addr, (char *)&mask, sizeof(mask)) < 0)
+        return -1;
+
+    return 0;
 }
-#endif
 
 uint64
 sys_kill(void)
@@ -107,3 +134,4 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+

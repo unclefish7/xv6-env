@@ -127,6 +127,18 @@ found:
     return 0;
   }
 
+  // Allocate a page for the USYSCALL structure.
+  p->usyscall = kalloc();
+  if(p->usyscall == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  // Initialize the USYSCALL structure with the current PID.
+  memset(p->usyscall, 0, PGSIZE);  // 确保页面初始化为0
+  p->usyscall->pid = p->pid;
+  // printf("allocproc: usyscall initialized with pid %d\n", p->usyscall->pid);
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -144,6 +156,7 @@ found:
   return p;
 }
 
+
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
@@ -153,6 +166,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+
+  if(p->usyscall)
+    kfree(p->usyscall);
+  p->usyscall = 0;
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -165,6 +183,7 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
 }
+
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
@@ -196,14 +215,27 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // Map the USYSCALL page to the user space.
+  if(mappages(pagetable, USYSCALL, PGSIZE, (uint64)p->usyscall, PTE_U | PTE_R) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
+  // 调试信息：读取USYSCALL内容以确认映射成功
+  // printf("proc_pagetable: mapped USYSCALL page for pid %d\n", p->usyscall->pid);
+
   return pagetable;
 }
+
 
 // Free a process's page table, and free the
 // physical memory it refers to.
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
+  uvmunmap(pagetable, USYSCALL, 1, 0);  // 添加解除映射USYSCALL
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
@@ -289,13 +321,16 @@ fork(void)
   }
   np->sz = p->sz;
 
-  // copy saved user registers.
+  // Copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
-  // increment reference counts on open file descriptors.
+  // Copy the usyscall page.
+  // memmove(np->usyscall, p->usyscall, PGSIZE);
+
+  // Increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
@@ -317,6 +352,7 @@ fork(void)
 
   return pid;
 }
+
 
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
