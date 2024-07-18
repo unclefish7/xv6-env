@@ -73,12 +73,26 @@ usertrap(void)
     p->killed = 1;
   }
 
+  // 如果进程被标记为killed，则退出
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  // 处理时钟中断
+  if(which_dev == 2){
+    // 只有在未激活alarm的情况下处理
+    if(p->alarmticks > 0 && !p->alarmactive){
+      p->alarmelapsed++;
+      if(p->alarmelapsed >= p->alarmticks){
+        p->alarmelapsed = 0;
+        p->alarmactive = 1;
+        // 保存当前trapframe
+        memmove(&p->alarmtrapframe, p->trapframe, sizeof(struct trapframe));
+        // 设置epc为用户alarm处理程序的地址
+        p->trapframe->epc = (uint64)p->alarmhandler;
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }

@@ -141,8 +141,15 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // 初始化与 alarm 相关的字段
+  p->alarmticks = 0;
+  p->alarmhandler = 0;
+  p->alarmelapsed = 0;
+  p->alarmactive = 0;
+
   return p;
 }
+
 
 // free a proc structure and the data hanging from it,
 // including user pages.

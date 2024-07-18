@@ -105,4 +105,10 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  int alarmticks;             // 触发 alarm 的 tick 数
+  void (*alarmhandler)();     // 用户定义的 alarm 处理函数
+  int alarmelapsed;           // 已经过的 tick 数
+  int alarmactive;            // alarm 是否激活
+  struct trapframe alarmtrapframe; // 保存 trapframe 以便恢复
 };
