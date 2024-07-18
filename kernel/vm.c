@@ -5,6 +5,12 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
+extern struct spinlock ref_count_lock;
+
+int handle_cow_fault(pagetable_t pagetable, uint64 va);
+void kref_inc(uint64 pa);
 
 /*
  * the kernel's page table.
@@ -303,22 +309,33 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    if (*pte & PTE_W) {
+      // set PTE_W to 0
+      *pte &= ~PTE_W;
+      // set PTE_RSW to 1
+      // set COW page
+      *pte |= PTE_COW;
     }
+    pa = PTE2PA(*pte);
+    if(pa >= PHYSTOP)  // 添加边界检查
+      panic("uvmcopy: pa out of bounds");
+
+    flags = PTE_FLAGS(*pte);
+
+    // Increase the reference count for the shared page
+    kref_inc(pa);
+
+    // Map the page into the new page table
+    if(mappages(new, i, PGSIZE, pa, flags) != 0)
+      goto err;
+
+
   }
   return 0;
 
@@ -326,6 +343,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
+
+
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
@@ -338,6 +357,12 @@ uvmclear(pagetable_t pagetable, uint64 va)
   if(pte == 0)
     panic("uvmclear");
   *pte &= ~PTE_U;
+}
+
+int checkcowpage(uint64 va, pte_t *pte, struct proc* p) {
+  return (va < (p->sz)) // va should blow the size of process memory (bytes)
+    && (*pte & PTE_V) 
+    && (*pte & PTE_COW); // pte is COW page
 }
 
 // Copy from kernel to user.
@@ -353,6 +378,36 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+
+    struct proc *p = myproc();
+    pte_t *pte = walk(pagetable, va0, 0);
+    if (*pte == 0)
+      p->killed = 1;
+    // check
+    if (checkcowpage(va0, pte, p)) 
+    {
+      char *mem;
+      if ((mem = kalloc()) == 0) {
+        // kill the process
+        p->killed = 1;
+      }else {
+        memmove(mem, (char*)pa0, PGSIZE);
+        // PAY ATTENTION!!!
+        // This statement must be above the next statement
+        uint flags = PTE_FLAGS(*pte);
+        // decrease the reference count of old memory that va0 point
+        // and set pte to 0
+        uvmunmap(pagetable, va0, 1, 1);
+        // change the physical memory address and set PTE_W to 1
+        *pte = (PA2PTE(mem) | flags | PTE_W);
+        // set PTE_RSW to 0
+        *pte &= ~PTE_COW;
+        // update pa0 to new physical memory address
+        pa0 = (uint64)mem;
+      }
+    }
+
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -431,4 +486,51 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int handle_cow_fault(pagetable_t pagetable, uint64 va) {
+  pte_t *pte;
+  uint64 pa;
+  char *mem;
+  uint flags;
+
+  if ((pte = walk(pagetable, va, 0)) == 0){
+    printf("handle_cow_fault: walk error\n");
+    return -1;
+  }
+  if ((*pte & PTE_V) == 0) {
+    printf("handle_cow_fault: PTE_V error\n");
+    return -1;
+  }
+
+  if ((*pte & PTE_U) == 0) {
+    printf("handle_cow_fault: PTE_U error\n");
+    return -1;
+  }
+  if ((*pte & PTE_W) != 0) {
+    printf("handle_cow_fault: PTE_W error\n");
+    return -1;
+  }
+  if ((*pte & PTE_COW) == 0) {
+    printf("handle_cow_fault: not a COW page\n");
+    return -1;
+  }
+
+  pa = PTE2PA(*pte);
+  if ((mem = kalloc()) == 0){
+    printf("handle_cow_fault: kalloc error\n");
+    return -1;
+  }
+  memmove(mem, (char*)pa, PGSIZE);
+  flags = PTE_FLAGS(*pte);
+  flags |= PTE_W;
+  *pte = PA2PTE(mem) | flags;
+  *pte &= ~PTE_COW;
+  kfree((void*)pa);  // Decrease the reference count
+  //kref_inc((uint64)mem); // Increase the reference count of new page
+  sfence_vma();
+
+  // printf("handle_cow_fault: va %p pa %p\n", va, mem); // 添加调试信息
+
+  return 0;
 }

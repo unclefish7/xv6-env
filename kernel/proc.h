@@ -106,3 +106,12 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };
+
+
+#include "memlayout.h"
+
+// In proc.h
+#define MAX_PHYS_PAGES (PHYSTOP / PGSIZE)
+
+
+extern int ref_count[MAX_PHYS_PAGES];  // 引用计数数组

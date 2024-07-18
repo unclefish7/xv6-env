@@ -8,11 +8,12 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "proc.h"
 
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
-                   // defined by kernel.ld.
+// defined by kernel.ld.
 
 struct run {
   struct run *next;
@@ -23,11 +24,14 @@ struct {
   struct run *freelist;
 } kmem;
 
+int ref_count[MAX_PHYS_PAGES];  // 引用计数数组
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+  memset(ref_count, 0, sizeof(ref_count));  // 初始化引用计数为0
 }
 
 void
@@ -50,6 +54,15 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  // Decrease the reference count
+  uint64 pa_index = ((uint64)pa) >> PGSHIFT;
+  acquire(&kmem.lock);
+  if(--ref_count[pa_index] > 0){
+    release(&kmem.lock);
+    return;
+  }
+  release(&kmem.lock);
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -76,7 +89,26 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+    uint64 pa_index = ((uint64)r) >> PGSHIFT;
+    ref_count[pa_index] = 1;  // 初始化引用计数为1
+    //printf("kalloc: allocated page at pa 0x%p\n", r);  // 添加调试信息
+  } else {
+    printf("kalloc: failed to allocate page\n");  // 添加调试信息
+  }
+
   return (void*)r;
+}
+
+void kref_inc(uint64 pa) {
+  uint64 pa_index = pa >> PGSHIFT;
+  acquire(&kmem.lock);
+  if (pa_index < MAX_PHYS_PAGES) {
+    ref_count[pa_index]++;
+    //printf("ref_count[%d] added\n", ref_count[pa_index]);
+  } else {
+    panic("kref_inc: pa_index out of bounds");
+  }
+  release(&kmem.lock);
 }
