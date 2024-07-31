@@ -86,6 +86,7 @@ e1000_init(uint32 *xregs)
   regs[E1000_RDTR] = 0; // 每接收一个包触发中断（无定时器）
   regs[E1000_RADV] = 0; // 每接收一个包触发中断（无定时器）
   regs[E1000_IMS] = (1 << 7); // 启用接收描述符写回中断
+  printf("e1000: initialized\n"); // 添加调试信息
 }
 
 // 实现发送数据包的函数
@@ -93,12 +94,14 @@ int e1000_transmit(struct mbuf *m)
 {
   acquire(&e1000_lock); // 获取锁，保护共享资源
 
-  uint32 index = regs[E1000_TDT]; // 获取发送环尾指针
-  struct tx_desc *desc = &tx_ring[index]; // 获取当前描述符
+  uint64 tdt = regs[E1000_TDT]; // 获取发送环尾指针
+  uint64 index = tdt % TX_RING_SIZE; 
+  struct tx_desc* desc = &tx_ring[index];// 获取当前描述符
 
   // 检查描述符是否可用
   if (!(desc->status & E1000_TXD_STAT_DD)) {
     release(&e1000_lock); // 释放锁
+    printf("e1000_transmit: no available descriptor\n"); // 添加调试信息
     return -1; // 发送队列已满
   }
 
@@ -117,14 +120,16 @@ int e1000_transmit(struct mbuf *m)
 
   // 更新发送环尾指针
   regs[E1000_TDT] = (index + 1) % TX_RING_SIZE;
-
+  __sync_synchronize();
   release(&e1000_lock); // 释放锁
+  printf("e1000_transmit: packet transmitted\n"); // 添加调试信息
   return 0;
 }
 
 // 实现接收数据包的函数
 static void e1000_recv(void)
 {
+  printf("e1000_recv: starting\n");
   acquire(&e1000_lock); // 获取锁，保护共享资源
 
   while (1) {
@@ -133,6 +138,7 @@ static void e1000_recv(void)
 
     // 检查描述符是否已被硬件处理
     if (!(desc->status & E1000_RXD_STAT_DD)) {
+      printf("e1000_recv: no new packets, RDT=%d\n", regs[E1000_RDT]);
       break; // 没有新包，退出循环
     }
 
@@ -144,6 +150,7 @@ static void e1000_recv(void)
     struct mbuf *m = rx_mbufs[index]; // 获取当前 mbuf
     m->len = desc->length; // 设置数据包长度
 
+    printf("e1000_recv: packet received, length=%d, index=%d\n", m->len, index);
     net_rx(m); // 交由网络层处理
 
     // 分配新的 mbuf 替换已使用的 mbuf
@@ -157,6 +164,7 @@ static void e1000_recv(void)
     rx_mbufs[index] = new_mbuf; // 更新 mbuf
 
     regs[E1000_RDT] = index; // 更新接收环尾指针
+    printf("e1000_recv: packet received\n"); // 添加调试信息
   }
 
   release(&e1000_lock); // 释放锁
@@ -168,4 +176,5 @@ void e1000_intr(void)
   regs[E1000_ICR] = 0xffffffff; // 清除中断标志，允许新的中断
 
   e1000_recv(); // 处理接收的数据包
+  printf("e1000_intr: interrupt handled\n"); // 添加调试信息
 }
