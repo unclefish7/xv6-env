@@ -7,6 +7,10 @@
 #include "spinlock.h"
 #include "proc.h"
 
+uint64 sys_mmap(void);
+uint64 sys_munmap(void);
+
+
 uint64
 sys_exit(void)
 {
