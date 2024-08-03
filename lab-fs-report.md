@@ -154,3 +154,169 @@ itrunc(struct inode *ip)
 ### 总结与体会
 
 通过本实验，我们学习了如何扩展 xv6 文件系统以支持大文件，深入理解了文件系统中间接块和双重间接块的原理和实现方法。在实验过程中，遇到了地址计算和内存释放的问题，通过调试和仔细分析代码，成功解决了这些问题。此次实验不仅巩固了我们对文件系统的理解，也提高了我们的编程调试能力。
+
+
+## Symbolic Links 实验报告
+
+### 实验目的
+
+实现符号链接（symbolic links），并深入理解路径解析的工作原理。符号链接指向一个文件路径，当打开符号链接时，内核会跟随链接指向的目标文件。
+
+### 实验步骤
+
+1. **添加系统调用**：在 `kernel/syscall.h` 中添加 `SYS_symlink`。
+
+   ```c
+   #define SYS_symlink 22
+   ```
+2. **更新用户接口**：在 `user/user.h` 中添加 `symlink` 函数声明。
+
+   ```c
+   int symlink(const char *target, const char *path);
+   ```
+3. **实现系统调用**：
+   在 `kernel/sysfile.c` 中实现 `sys_symlink` 函数。
+
+   ```c
+   int
+   sys_symlink(void)
+   {
+     char target[MAXPATH], path[MAXPATH];
+     struct inode *ip;
+
+     if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+       return -1;
+
+     begin_op();
+     if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
+       end_op();
+       return -1;
+     }
+     if(writei(ip, 0, (uint64)target, 0, strlen(target)) != strlen(target)){
+       iunlockput(ip);
+       end_op();
+       return -1;
+     }
+     iupdate(ip);
+     iunlockput(ip);
+     end_op();
+     return 0;
+   }
+   ```
+4. **添加文件类型**：在 `kernel/stat.h` 中添加符号链接类型。
+
+   ```c
+   #define T_SYMLINK 3
+   ```
+5. **更新 `fcntl.h`**：添加 `O_NOFOLLOW` 标志。
+
+   ```c
+   #define O_NOFOLLOW 0x100
+   ```
+6. **修改 `sys_open`**：处理符号链接解析。
+
+   ```c
+   uint64
+   sys_open(void)
+   {
+     char path[MAXPATH];
+     int fd, omode;
+     struct file *f;
+     struct inode *ip;
+     int n, deref = 0;
+
+     if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
+       return -1;
+
+     begin_op();
+
+     if(omode & O_CREATE){
+       ip = create(path, T_FILE, 0, 0);
+       if(ip == 0){
+         end_op();
+         return -1;
+       }
+     } else {
+       if((ip = namei(path)) == 0){
+         end_op();
+         return -1;
+       }
+       ilock(ip);
+       if(ip->type == T_DIR && omode != O_RDONLY){
+         iunlockput(ip);
+         end_op();
+         return -1;
+       }
+
+       while(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW) && deref < 10) {
+         char sym_path[MAXPATH];
+         if (readi(ip, 0, (uint64)sym_path, 0, MAXPATH) < 0) {
+           iunlockput(ip);
+           end_op();
+           return -1;
+         }
+         sym_path[MAXPATH-1] = '\0';
+         iunlockput(ip);
+         if ((ip = namei(sym_path)) == 0) {
+           end_op();
+           return -1;
+         }
+         ilock(ip);
+         deref++;
+       }
+
+       if(deref == 10) {
+         iunlockput(ip);
+         end_op();
+         return -1;
+       }
+     }
+
+     if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+       iunlockput(ip);
+       end_op();
+       return -1;
+     }
+
+     if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+       if(f)
+         fileclose(f);
+       iunlockput(ip);
+       end_op();
+       return -1;
+     }
+
+     if(ip->type == T_DEVICE){
+       f->type = FD_DEVICE;
+       f->major = ip->major;
+     } else {
+       f->type = FD_INODE;
+       f->off = 0;
+     }
+     f->ip = ip;
+     f->readable = !(omode & O_WRONLY);
+     f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+
+     if((omode & O_TRUNC) && ip->type == T_FILE){
+       itrunc(ip);
+     }
+
+     iunlock(ip);
+     end_op();
+     return fd;
+   }
+   ```
+7. **测试**：添加并运行 `symlinktest` 验证符号链接的实现。
+
+### 遇到的问题及解决方法
+
+1. **磁盘中断处理错误**：
+   - **问题描述**：在运行 `symlinktest` 时，遇到 `virtio_disk_intr status` panic 错误。
+   - **调试步骤**：
+     - 在 `virtio_disk_intr` 和相关函数中添加调试信息。
+     - 检查磁盘操作和中断处理的一致性。
+   - **现状**：错误尚未解决，怀疑与磁盘操作或符号链接处理有关。
+
+### 总结与体会
+
+通过该实验，深入理解了符号链接的实现和路径解析机制。尽管遇到了磁盘中断处理的挑战，但通过详细的调试和分析，增强了对操作系统内部机制的理解。后续需要进一步解决磁盘中断处理错误，确保符号链接功能的稳定性。

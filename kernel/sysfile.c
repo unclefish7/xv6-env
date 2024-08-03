@@ -290,10 +290,14 @@ sys_open(void)
   int fd, omode;
   struct file *f;
   struct inode *ip;
-  int n;
+  int n, deref = 0;
+
+  printf("sys_open: start\n");
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
+
+  printf("sys_open: path = %s, omode = %d\n", path, omode);
 
   begin_op();
 
@@ -301,17 +305,47 @@ sys_open(void)
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
       end_op();
+      printf("sys_open: error creating file\n");
       return -1;
     }
   } else {
     if((ip = namei(path)) == 0){
       end_op();
+      printf("sys_open: namei error\n");
       return -1;
     }
     ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
+      printf("sys_open: trying to open directory with wrong mode\n");
+      return -1;
+    }
+
+    while(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW) && deref < 10) {
+      char sym_path[MAXPATH];
+      if (readi(ip, 0, (uint64)sym_path, 0, MAXPATH) < 0) {
+        iunlockput(ip);
+        end_op();
+        printf("sys_open: error reading symlink\n");
+        return -1;
+      }
+      sym_path[MAXPATH-1] = '\0';
+      printf("sys_open: following symlink to %s\n", sym_path);
+      iunlockput(ip);
+      if ((ip = namei(sym_path)) == 0) {
+        printf("sys_open: error following symlink\n");
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+      deref++;
+    }
+
+    if(deref == 10) {
+      iunlockput(ip);
+      end_op();
+      printf("sys_open: too many symlink dereferences\n");
       return -1;
     }
   }
@@ -319,6 +353,7 @@ sys_open(void)
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
     end_op();
+    printf("sys_open: invalid device\n");
     return -1;
   }
 
@@ -327,6 +362,7 @@ sys_open(void)
       fileclose(f);
     iunlockput(ip);
     end_op();
+    printf("sys_open: error allocating file\n");
     return -1;
   }
 
@@ -347,9 +383,12 @@ sys_open(void)
 
   iunlock(ip);
   end_op();
-
+  printf("sys_open: success\n");
   return fd;
 }
+
+
+
 
 uint64
 sys_mkdir(void)
@@ -484,3 +523,37 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+
+  printf("sys_symlink: start\n");
+
+  begin_op();
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0){
+    end_op();
+    printf("sys_symlink: error with arguments\n");
+    return -1;
+  }
+  printf("sys_symlink: target = %s, path = %s\n", target, path);
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
+    end_op();
+    printf("sys_symlink: error creating inode\n");
+    return -1;
+  }
+  if(writei(ip, 0, (uint64)target, 0, strlen(target)) != strlen(target)){
+    iunlockput(ip);
+    end_op();
+    printf("sys_symlink: error writing to inode\n");
+    return -1;
+  }
+  iupdate(ip);
+  iunlockput(ip);
+  end_op();
+  printf("sys_symlink: success\n");
+  return 0;
+}
+
